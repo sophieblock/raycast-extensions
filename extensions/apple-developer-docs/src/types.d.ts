@@ -44,39 +44,22 @@ type AppleSearchResponse = {
   results?: AppleSearchResult[];
 };
 
-type AppleSearchResult =
-  | {
-      documentation: {
-        metadata: AppleDocumentationMetadata;
-      };
-    }
-  | {
-      devsite: {
-        metadata: AppleDevsiteMetadata;
-      };
-    }
-  | {
-      developer: {
-        metadata: AppleDeveloperMetadata;
-      };
-    };
+type AppleSearchResult = {
+  excerpt?: string;
+  value?: {
+    metadata?: AppleSearchMetadata;
+  };
+};
 
-type AppleDocumentationMetadata = {
+type AppleSearchMetadata = {
+  metadataKind?: string;
   title?: string;
   description?: string;
   permalink?: string;
+  sourceURL?: string;
   hierarchy?: string;
   availability?: string;
   kind?: string;
-};
-
-type AppleDevsiteMetadata = {
-  title?: string;
-  description?: string;
-  sourceURL?: string;
-};
-
-type AppleDeveloperMetadata = {
   titles?: string[];
   descriptions?: string[];
   permalinks?: string[];
@@ -88,6 +71,13 @@ type AppleDeveloperMetadata = {
   deliveryLanguageCodes?: string[];
   mediaDurations?: number[];
 };
+
+type AppleQueryEvent =
+  | { kind: "quickSearch"; response?: { results?: AppleSearchResult[] } }
+  | { kind: "quickSearchFinished" }
+  | { kind: "search"; diff?: { append?: string; removeLast?: number } }
+  | { kind: "searchFinished" }
+  | { kind: "error"; response?: string };
 
 interface Visitable {
   onVisit: (result: ResultLike) => void;

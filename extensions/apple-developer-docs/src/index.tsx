@@ -14,17 +14,17 @@ export default function Command() {
   const { data, isLoading } = useFetch(`${config.apiBaseUrl}?q=${encodeURIComponent(query)}`, {
     method: "POST",
     headers: {
-      Accept: "application/json",
+      Accept: "application/jsonl",
       "Content-Type": "application/json",
       "User-Agent": "Raycast Apple Developer Docs",
     },
-    body: JSON.stringify({ text: query, targetResultLocale: "en", results: config.maxResults }),
+    body: JSON.stringify({ text: query, targetResultLocale: "en", includedResponses: ["quickSearch", "search"] }),
     parseResponse: async (response) => {
       if (!response.ok) {
         throw new Error(`Apple Developer search request failed with status ${response.status}`);
       }
 
-      return normalizeResponse((await response.json()) as AppleSearchResponse);
+      return normalizeResponse(await parseQueryStream(response));
     },
     keepPreviousData: true,
     initialData: { results: [], featuredResult: "", suggested_query: "", uuid: "" },
@@ -95,6 +95,43 @@ export default function Command() {
   );
 }
 
+async function parseQueryStream(response: Response): Promise<AppleSearchResponse> {
+  const text = await response.text();
+  let quickResults: AppleSearchResult[] = [];
+  let searchBuffer = "";
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+
+    let event: AppleQueryEvent;
+    try {
+      event = JSON.parse(line) as AppleQueryEvent;
+    } catch {
+      continue;
+    }
+
+    if (event.kind === "quickSearch") {
+      quickResults = event.response?.results ?? [];
+    } else if (event.kind === "search") {
+      const diff = event.diff ?? {};
+      if (diff.removeLast) {
+        searchBuffer = searchBuffer.slice(0, Math.max(0, searchBuffer.length - diff.removeLast));
+      }
+      searchBuffer += diff.append ?? "";
+    }
+  }
+
+  if (searchBuffer.trim()) {
+    try {
+      return JSON.parse(searchBuffer) as AppleSearchResponse;
+    } catch {
+      // fall back to quickSearch results
+    }
+  }
+
+  return { results: quickResults };
+}
+
 function normalizeResponse(payload: AppleSearchResponse): PayloadResponse {
   return {
     results: (payload.results ?? []).slice(0, config.maxResults).map(normalizeResult),
@@ -105,8 +142,9 @@ function normalizeResponse(payload: AppleSearchResponse): PayloadResponse {
 }
 
 function normalizeResult(result: AppleSearchResult, order: number): SearchResult {
-  if ("documentation" in result) {
-    const metadata = result.documentation.metadata;
+  const metadata = result.value?.metadata ?? {};
+
+  if (metadata.metadataKind === "documentation") {
     const type = metadata.kind === "sampleCode" ? "sample_code" : "documentation";
 
     return createSearchResult({
@@ -120,9 +158,7 @@ function normalizeResult(result: AppleSearchResult, order: number): SearchResult
     });
   }
 
-  if ("devsite" in result) {
-    const metadata = result.devsite.metadata;
-
+  if (metadata.metadataKind === "webPage") {
     return createSearchResult({
       title: metadata.title,
       description: metadata.description,
@@ -132,7 +168,6 @@ function normalizeResult(result: AppleSearchResult, order: number): SearchResult
     });
   }
 
-  const metadata = result.developer.metadata;
   const itemType = first(metadata.itemTypes);
 
   return createSearchResult({

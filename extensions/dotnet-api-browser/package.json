@@ -5,6 +5,9 @@
   "description": "Quickly search the .NET API catalog.",
   "icon": "dotnet-logo.png",
   "author": "vcsjones",
+  "contributors": [
+    "sophie_block"
+  ],
   "categories": [
     "Developer Tools",
     "Documentation"
